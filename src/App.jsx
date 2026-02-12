@@ -1,96 +1,180 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
+import { useState, useEffect } from 'react'
 import './App.css'
 
-function App() {
-  const [todos, setTodos] = useState([
-    { id: 1, text: 'Learn React', completed: false },
-    { id: 2, text: 'Build a project', completed: false },
-    { id: 3, text: 'Deploy to GitHub Pages', completed: false }
-  ])
-  const [newTodo, setNewTodo] = useState('')
-  const [count, setCount] = useState(0)
+const API_URL = 'https://jsonplaceholder.typicode.com/todos'
 
-  const addTodo = (e) => {
-    e.preventDefault()
-    if (newTodo.trim()) {
-      setTodos([...todos, { id: Date.now(), text: newTodo, completed: false }])
-      setNewTodo('')
+function App() {
+  const [tasks, setTasks] = useState([])
+  const [taskInput, setTaskInput] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  // Fetch tasks on mount
+  useEffect(() => {
+    fetchTasks()
+  }, [])
+
+  const fetchTasks = async () => {
+    setLoading(true)
+    try {
+      const response = await fetch(`${API_URL}?_limit=5`)
+      const data = await response.json()
+      setTasks(data)
+    } catch (error) {
+      console.error('Error fetching tasks:', error)
+    } finally {
+      setLoading(false)
     }
   }
 
-  const toggleTodo = (id) => {
-    setTodos(todos.map(todo =>
-      todo.id === id ? { ...todo, completed: !todo.completed } : todo
+  const addTask = async (e) => {
+    e.preventDefault()
+
+    const taskText = taskInput.trim()
+    if (!taskText) return
+
+    // Create optimistic task with temporary ID
+    const optimisticTask = {
+      id: Date.now(),
+      title: taskText,
+      completed: false,
+      userId: 1
+    }
+
+    // Optimistically update UI
+    setTasks([optimisticTask, ...tasks])
+    setTaskInput('')
+
+    // Send POST request
+    try {
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: taskText,
+          completed: false,
+          userId: 1
+        })
+      })
+      const newTask = await response.json()
+
+      // Update with real task from server
+      setTasks(prevTasks =>
+        prevTasks.map(task =>
+          task.id === optimisticTask.id ? newTask : task
+        )
+      )
+    } catch (error) {
+      console.error('Error adding task:', error)
+      // Remove optimistic task on error
+      setTasks(prevTasks =>
+        prevTasks.filter(task => task.id !== optimisticTask.id)
+      )
+    }
+  }
+
+  const toggleComplete = async (task) => {
+    // Optimistically update UI
+    setTasks(tasks.map(t =>
+      t.id === task.id ? { ...t, completed: !t.completed } : t
     ))
+
+    // Send PUT request
+    try {
+      await fetch(`${API_URL}/${task.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...task,
+          completed: !task.completed
+        })
+      })
+    } catch (error) {
+      console.error('Error updating task:', error)
+      // Revert on error
+      setTasks(tasks.map(t =>
+        t.id === task.id ? { ...t, completed: task.completed } : t
+      ))
+    }
   }
 
-  const deleteTodo = (id) => {
-    setTodos(todos.filter(todo => todo.id !== id))
-  }
+  const deleteTask = async (id) => {
+    // Optimistically update UI
+    setTasks(tasks.filter(task => task.id !== id))
 
-  const completedCount = todos.filter(todo => todo.completed).length
+    // Send DELETE request
+    try {
+      await fetch(`${API_URL}/${id}`, {
+        method: 'DELETE'
+      })
+    } catch (error) {
+      console.error('Error deleting task:', error)
+      // Could refetch tasks on error
+      fetchTasks()
+    }
+  }
 
   return (
-    <>
-      <div className="logo-container">
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
+    <div className="app">
+      <div className="container">
+        <h1 className="title">Team Task Manager</h1>
 
-      <h1>React + GitHub Pages Demo</h1>
-
-      <div className="card">
-        <h2>Interactive Counter</h2>
-        <button onClick={() => setCount((count) => count + 1)}>
-          Clicked {count} times
-        </button>
-      </div>
-
-      <div className="card todo-card">
-        <h2>Todo List</h2>
-        <p className="stats">
-          {completedCount} of {todos.length} tasks completed
-        </p>
-
-        <form onSubmit={addTodo} className="todo-form">
-          <input
-            type="text"
-            value={newTodo}
-            onChange={(e) => setNewTodo(e.target.value)}
-            placeholder="Add a new task..."
-            className="todo-input"
-          />
-          <button type="submit" className="add-btn">Add</button>
-        </form>
-
-        <ul className="todo-list">
-          {todos.map(todo => (
-            <li key={todo.id} className={`todo-item ${todo.completed ? 'completed' : ''}`}>
+        {loading ? (
+          <div className="loading">Loading...</div>
+        ) : (
+          <>
+            <form onSubmit={addTask} className="input-section">
               <input
-                type="checkbox"
-                checked={todo.completed}
-                onChange={() => toggleTodo(todo.id)}
-                className="todo-checkbox"
+                type="text"
+                value={taskInput}
+                onChange={(e) => setTaskInput(e.target.value)}
+                placeholder="Type a task name..."
+                className="task-input"
               />
-              <span className="todo-text">{todo.text}</span>
-              <button onClick={() => deleteTodo(todo.id)} className="delete-btn">
-                Delete
+              <button type="submit" className="add-button">
+                Add Task
               </button>
-            </li>
-          ))}
-        </ul>
-      </div>
+            </form>
 
-      <p className="read-the-docs">
-        This is a sample React app deployed on GitHub Pages
-      </p>
-    </>
+            <div className="tasks-list">
+              {tasks.length === 0 ? (
+                <p className="empty-message">No tasks yet. Add one above!</p>
+              ) : (
+                tasks.map(task => (
+                  <div key={task.id} className="task-card">
+                    <div className="task-info">
+                      <h3 className={`task-title ${task.completed ? 'completed' : ''}`}>
+                        {task.title}
+                      </h3>
+                      <span className="task-status">
+                        {task.completed ? '✓ Completed' : '○ Pending'}
+                      </span>
+                    </div>
+                    <div className="task-buttons">
+                      <button
+                        onClick={() => toggleComplete(task)}
+                        className="complete-button"
+                      >
+                        {task.completed ? 'Undo' : 'Complete'}
+                      </button>
+                      <button
+                        onClick={() => deleteTask(task.id)}
+                        className="delete-button"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   )
 }
 
